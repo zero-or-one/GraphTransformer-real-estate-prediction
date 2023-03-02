@@ -38,6 +38,7 @@ python main.py --config $config_file.json --visible_gpus gpus_to_use
 - [ ] Make the yearly and montly training
 - [ ] Combine GT network with LSTM
 - [ ] Configure hyperparameters
+- [ ] Allow more than 1 meta path for the graph
 
 
 ### Reference
