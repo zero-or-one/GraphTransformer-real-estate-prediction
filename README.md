@@ -25,10 +25,7 @@ python preprocess.py --data_path $path_to_csv_dataset --create_adj $wheither_to_
 ### Training the model
 Specify the parameters in required class in ./config/config_file.json
 ```
-
-# train gcn model independently
 python main.py --config $config_file.json --visible_gpus gpus_to_use
-
 ```
 
 ### Results
