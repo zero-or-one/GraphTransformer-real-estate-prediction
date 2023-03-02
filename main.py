@@ -77,7 +77,6 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, result_path):
         
     DATASET_NAME = dataset.dataset_name
     logger = Logger(result_path, result_path + 'model_saved/', result_path + 'others/')
-    '''
     if net_params['lap_pos_enc']:
         st = time.time()
         print("[!] Adding Laplacian positional encoding.")
@@ -95,7 +94,7 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, result_path):
         print("[!] Converting the given graphs to full graphs..")
         dataset._make_full_graph()
         print('Time taken to convert to full graphs:',time.time()-st)    
-    '''
+
     logger.save_parameters(MODEL_NAME, params, net_params)
     train_len = int(params['dataset_ratio']*len(dataset))
     trainset, testset = torch.utils.data.random_split(dataset, [train_len, len(dataset)-train_len])   
@@ -162,9 +161,9 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, result_path):
         print('Exiting from training early because of KeyboardInterrupt')
     
     _, test_mae, test_mse = evaluate_network(model, device, test_loader, epoch)
-    _, train_mae, test_mse = evaluate_network(model, device, train_loader, epoch)
-    logger.log_training(-1, avg_training_loss)
-    logger.log_testing(-1, mse, mae, rmse, cost_time)
+    training_loss, train_mae, test_mse = evaluate_network(model, device, train_loader, epoch)
+    logger.log_training(-1, training_loss)
+    logger.log_testing(-1, test_mse, train_mae, np.sqrt(test_mse), 0)
     print("Test MAE: {:.4f}".format(test_mae))
     print("Test MSE: {:.4f}".format(test_mse))
     print("Train MAE: {:.4f}".format(train_mae))
@@ -203,27 +202,8 @@ def main():
     net_params['batch_size'] = config['params']['batch_size']
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
 
-    if net_params['lap_pos_enc']:
-        dataset._add_laplacian_positional_encodings(net_params["pos_enc_dim"])
-
     #os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
     train_val_pipeline(MODEL_NAME, dataset, config['params'], net_params, result_path)
 
 
 main()    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
