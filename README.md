@@ -38,9 +38,9 @@ python main.py --config $config_file.json --visible_gpus gpus_to_use
 
 ### TODO
 - [x] Make positional encodings work
-- [] Make the yearly and montly training
-- [] Combine GT network with LSTM
-- [] Configure hyperparameters
+- [ ] Make the yearly and montly training
+- [ ] Combine GT network with LSTM
+- [ ] Configure hyperparameters
 
 
 ### Reference
