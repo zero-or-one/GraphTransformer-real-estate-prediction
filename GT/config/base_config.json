@@ -13,12 +13,12 @@
     
     "params": {
         "seed": 41,
-        "epochs": 1000,
+        "epochs": 13000,
         "batch_size": 128,
-        "init_lr": 0.0007,
-        "lr_reduce_factor": 0.5,
-        "lr_schedule_patience": 15,
-        "min_lr": 1e-6,
+        "init_lr": 0.001,
+        "lr_reduce_factor": 0.7,
+        "lr_schedule_patience": 60,
+        "min_lr": 1e-10,
         "weight_decay": 0.0,
         "print_epoch_interval": 5,
         "max_time": 24,
@@ -43,6 +43,10 @@
         "full_graph": false,
         "e_dim": 1,
         "h_dim": 339,
-        "pos_enc_dim": 16
+        "pos_enc_dim": 16,
+        "month_len": 17,
+        "feature_size": 64,
+        "num_layers": 1,
+        "house_size": 184
     }
 }

@@ -131,7 +131,6 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, result_path):
                 epoch_train_loss, epoch_train_mae, epoch_train_mse, optimizer = train_epoch(model, optimizer, device, train_loader, epoch)
                 epoch_test_loss, epoch_test_mae, epoch_test_mse = evaluate_network(model, device, test_loader, epoch)
                 
-                epoch_test_mae = 0
                 t.set_postfix(time=time.time()-start, lr=optimizer.param_groups[0]['lr'],
                               train_loss=epoch_train_loss,
                               train_MAE=epoch_train_mae, test_MAE=epoch_test_mae,
@@ -161,7 +160,7 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, result_path):
         print('Exiting from training early because of KeyboardInterrupt')
     
     _, test_mae, test_mse = evaluate_network(model, device, test_loader, epoch)
-    training_loss, train_mae, test_mse = evaluate_network(model, device, train_loader, epoch)
+    training_loss, train_mae, train_mse = evaluate_network(model, device, train_loader, epoch)
     logger.log_training(-1, training_loss)
     logger.log_testing(-1, test_mse, train_mae, np.sqrt(test_mse), 0)
     print("Test MAE: {:.4f}".format(test_mae))
@@ -183,11 +182,19 @@ def main():
     parser.add_argument('--config', help="Please give a config.json \
         file with training/model/data/param details", default='./config/base_config.json')
     parser.add_argument('--visible_gpus', help="Please give a list of visible GPUs", default='0')
+    parser.add_argument('--model', help="Enter a model name if it's different from config", default=None)
+    parser.add_argument('--dataset', help="Enter a dataset it's different from config", default=None)
+    
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.visible_gpus
 
     with open(args.config) as f:
         config = json.load(f)
+    if args.model:
+        config['model'] = args.model
+    if args.dataset:
+        config['dataset'] = args.dataset
+    
     device = gpu_setup(config['gpu']['use'], config['gpu']['id'])
     
     

@@ -101,7 +101,7 @@ class RealEstateDGL(torch.utils.data.Dataset):
         A = np.load(os.path.join(self.data_dir, name))
         self.number_of_nodes = A.shape[0]
         # experimntal parameters
-        minimum_weight = 1
+        minimum_weight = 0.1
         #feature_limit = 100
         for i in range(self.number_of_nodes):
             src, dst = np.nonzero(A)
@@ -119,16 +119,17 @@ class RealEstateDGL(torch.utils.data.Dataset):
             #dst = dst[:limit]
             #weight = weight[:limit]
             # rename dst items from 1 to len(dst)
-            src = torch.arange(0, len(src))
-            dst = torch.arange(0, len(dst))
-            g = dgl.DGLGraph((src, dst))
-            g.edata['weight'] = torch.tensor(A[src, dst])
-            #print(g.edata['weight'].shape, node_features[i].shape)
-            g.ndata['feats'] = torch.tensor(node_features[src])#[:,:feature_limit])
+            src_ = torch.arange(0, len(src))
+            dst_ = torch.arange(0, len(dst))
+            g = dgl.DGLGraph((src_, dst_))
+            #print(A.shape, src.shape, dst.shape, src_.shape, dst_.shape)
+            g.edata['weight'] = torch.tensor(A[src_, dst_])
+            #print(g.edata['weight'].shape, node_features[dst].shape, node_features[src_].shape)
+            g.ndata['feats'] = torch.tensor(node_features[dst])#[:,:feature_limit])
             #print("src", src.shape,"feats", g.ndata['feats'].shape)
             self.graph_list.append(g)
             #if i == 5:
-            #    break
+            #   break
         
     def __len__(self):
         """Return the number of graphs in the dataset."""
