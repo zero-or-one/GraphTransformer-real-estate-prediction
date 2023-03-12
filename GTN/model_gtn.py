@@ -6,17 +6,18 @@ import math
 from gcn import GCNConv
 from torch_scatter import scatter_add
 import torch_sparse
+from utils import MSE
 
 class GTN(nn.Module):
     
-    def __init__(self, num_edge, num_channels, w_in, w_out, num_class, num_nodes, num_layers, args=None):
+    def __init__(self, num_edge, num_channels, w_in, w_out, num_nodes, num_layers, args=None):
         super(GTN, self).__init__()
         self.num_edge = num_edge
         self.num_channels = num_channels
         self.num_nodes = num_nodes
         self.w_in = w_in
         self.w_out = w_out
-        self.num_class = num_class
+        self.num_class = 1
         self.num_layers = num_layers
         self.args = args
         layers = []
@@ -26,11 +27,7 @@ class GTN(nn.Module):
             else:
                 layers.append(GTLayer(num_edge, num_channels, num_nodes, first=False))
         self.layers = nn.ModuleList(layers)
-        if args.dataset in ["PPI", "BOOK", "MUSIC"]:
-            self.m = nn.Sigmoid()
-            self.loss = nn.BCELoss()
-        else:
-            self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.L1Loss()
         self.gcn = GCNConv(in_channels=self.w_in, out_channels=w_out, args=args)
         self.linear = nn.Linear(self.w_out*self.num_channels, self.num_class)
 
@@ -57,7 +54,7 @@ class GTN(nn.Module):
 
         return deg_inv_sqrt[row], deg_inv_sqrt[col]
 
-    def forward(self, A, X, target_x, target, num_nodes=None, eval=False, node_labels=None):
+    def forward(self, A, X, target, num_nodes=None, eval=False, node_labels=None):
         if num_nodes is None:
             num_nodes = self.num_nodes
         Ws = []
@@ -76,8 +73,10 @@ class GTN(nn.Module):
             else:
                 X_tmp = F.relu(self.gcn(X,edge_index=edge_index.detach(), edge_weight=edge_weight))
                 X_ = torch.cat((X_,X_tmp), dim=1)
-
-        y = self.linear(X_[target_x])
+        y = self.linear(X_)
+        #print(y.shape, target.shape)
+        #exit()
+        mse_error = MSE(y, target)
         if eval:
             return y
         else:
@@ -85,7 +84,7 @@ class GTN(nn.Module):
                 loss = self.loss(self.m(y), target)
             else:
                 loss = self.loss(y, target)
-        return loss, y, Ws
+        return loss, mse_error, y, Ws
 
 class GTLayer(nn.Module):
     
@@ -132,6 +131,7 @@ class GTConv(nn.Module):
         self.bias = None
         self.num_nodes = num_nodes
         self.reset_parameters()
+
     def reset_parameters(self):
         n = self.in_channels
         nn.init.normal_(self.weight, std=0.01)
@@ -146,13 +146,16 @@ class GTConv(nn.Module):
         results = []
         for i in range(num_channels):
             for j, (edge_index,edge_value) in enumerate(A):
+                edge_index = edge_index.to(filter.device)
+                edge_value = edge_value.to(filter.device)
+                #print(i,j, edge_index.shape, edge_value.shape, filter[i][j].shape)
                 if j == 0:
                     total_edge_index = edge_index
                     total_edge_value = edge_value*filter[i][j]
                 else:
                     total_edge_index = torch.cat((total_edge_index, edge_index), dim=1)
                     total_edge_value = torch.cat((total_edge_value, edge_value*filter[i][j]))
-            
             index, value = torch_sparse.coalesce(total_edge_index.detach(), total_edge_value, m=num_nodes, n=num_nodes, op='add')
+            #index, value = total_edge_index, total_edge_value
             results.append((index, value))
         return results

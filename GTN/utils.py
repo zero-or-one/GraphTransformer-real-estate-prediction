@@ -12,6 +12,18 @@ from torch.distributions.uniform import Uniform
 import time
 
 
+def MAE(scores, targets):
+    MAE = F.l1_loss(scores, targets)
+    MAE = MAE.detach().item()
+    #MAE = mean_absolute_error(scores.detach().cpu().numpy().reshape(1,-1),\
+    # targets.detach().cpu().numpy().reshape(1,-1))
+    return MAE
+
+def MSE(scores, targets):
+    MSE = F.mse_loss(scores, targets)
+    MSE = MSE.detach().item()
+    return MSE
+
 def accuracy(pred, target):
     r"""Computes the accuracy of correct predictions.
 

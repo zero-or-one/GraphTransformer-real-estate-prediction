@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Parameter
-from torch import scatter_add
+from torch_scatter import scatter_add
 from torch_geometric.nn.conv.message_passing import MessagePassing
 from torch_geometric.utils import add_self_loops
 from inits import glorot, zeros
@@ -83,6 +83,7 @@ class GCNConv(MessagePassing):
         row, col = edge_index
         
         # deg = scatter_add(edge_weight, col, dim=0, dim_size=num_nodes)
+        #print(edge_weight.size(), row.size(), col.size(), num_nodes)
         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow(-1)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0

@@ -5,12 +5,11 @@ from model_gtn import GTN
 from model_fastgtn import FastGTNs
 import pickle
 import argparse
-from torch_geometric.utils import f1_score, add_self_loops
+from torch_geometric.utils import add_self_loops
 from sklearn.metrics import f1_score as sk_f1_score
 from utils import init_seed, _norm
 import copy
 import pandas as pd
-
 
 if __name__ == '__main__':
     init_seed(seed=777)
@@ -19,15 +18,18 @@ if __name__ == '__main__':
                         help='Model')
     parser.add_argument('--dataset', type=str,
                         help='Dataset', default='REALESTATE')
-    parser.add_argument('--epoch', type=int, default=200,
+    parser.add_argument('--epoch', type=int, default=30000,
                         help='Training Epochs')
     parser.add_argument('--node_dim', type=int, default=64,
                         help='hidden dimensions')
     parser.add_argument('--num_channels', type=int, default=2,
                         help='number of channels')
-    parser.add_argument('--lr', type=float, default=0.01,
+    parser.add_argument('--lr', type=float, default=0.001,
                         help='learning rate')
-    parser.add_argument('--weight_decay', type=float, default=0.001,
+    parser.add_argument('--lr_decay', type=int, default=0.1, help='learning rate decay')
+    parser.add_argument('--lr_decay_step', type=int, default=1000, help='learning rate decay step')
+    parser.add_argument("--batch_size", type=int, default=128, help="batch size")
+    parser.add_argument('--weight_decay', type=float, default=0.0001,
                         help='l2 reg')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of GT/FastGT layers')
@@ -44,9 +46,10 @@ if __name__ == '__main__':
     parser.add_argument("--pre_train", action='store_true', help="pre-training FastGT layers")
     parser.add_argument('--num_FastGTN_layers', type=int, default=1,
                         help='number of FastGTN layers')
-
+    parser.add_argument('--device', type=str, default='cuda:0')
     args = parser.parse_args()
     print(args)
+    device = args.device
 
     epochs = args.epoch
     node_dim = args.node_dim
@@ -55,9 +58,6 @@ if __name__ == '__main__':
     weight_decay = args.weight_decay
     num_layers = args.num_layers
 
-
-    num_nodes = edges[0].shape[0]
-    args.num_nodes = num_nodes
     '''
     # build adjacency matrices for each edge type
     A = []
@@ -74,49 +74,51 @@ if __name__ == '__main__':
     value_tmp = torch.ones(num_nodes).type(torch.cuda.FloatTensor)
     A.append((edge_tmp,value_tmp))
     '''
-    A = np.load('dataset/{}.npy'.format('adjacency_house'))
+    A = []
+    adj_matrix = np.load('dataset/{}.npy'.format("adjacency_house"))
+    #for i in range(adj_matrix.shape[0]):
+    edge_index = torch.from_numpy(np.vstack(adj_matrix.nonzero())).to(torch.long).to(device)
+    # add target node
+    edge_value = torch.from_numpy(adj_matrix[adj_matrix.nonzero()]).to(torch.float).to(device)
+    #print(edge_index.shape, edge_value.shape)
+    A.append((edge_index, edge_value))
+    num_nodes = adj_matrix.shape[0]
+    #exit()
+    args.num_nodes = num_nodes
+    # add self-loops and normalize if needed
+    if args.model == 'FastGTN' and args.dataset != 'AIRPORT':
+        edge_index, edge_value = add_self_loops(edge_index, edge_attr=edge_value, fill_value=1e-20, num_nodes=num_nodes)
+        deg_inv_sqrt, deg_row, deg_col = _norm(edge_index.detach(), num_nodes, edge_value.detach())
+        edge_value = deg_inv_sqrt[deg_row] * edge_value
+
+    # add the diagonal entries for each node
+    #diag_edge_index = torch.stack((torch.arange(0,num_nodes),torch.arange(0,num_nodes))).to(torch.long)
+    #diag_edge_value = torch.ones(num_nodes).to(torch.float)
+    #A.append((diag_edge_index, diag_edge_value))
+
     node_features = pd.read_csv('dataset/{}.csv'.format('processed_data')).values
-    labels = node_features[:, -3]
+    labels = np.expand_dims(node_features[:, -3], 1)
     node_features = node_features[:, :-3] + node_features[:, -1:]
-    # add indices to labels
-    labels = np.vstack((np.arange(0, node_features.shape[0]), labels)).T
     # split train/valid/test by 0.8/0.1/0.1 using indices
     nids = np.arange(0, node_features.shape[0])
-    np.random.shuffle(nids)
-    nids = np.array_split(nids, 10)
+    #np.random.shuffle(nids)
+    # split nids to 80% train, 10% valid, 10% test
+    nids = np.split(nids, [int(0.9*len(nids))])
 
-    train_node = torch.from_numpy(nids[0]).type(torch.cuda.LongTensor)
-    train_target = torch.from_numpy(labels[nids[0]]).type(torch.cuda.FloatTensor)
-    valid_node = torch.from_numpy(nids[1]).type(torch.cuda.LongTensor)
-    valid_target = torch.from_numpy(labels[nids[1]]).type(torch.cuda.FloatTensor)
-    test_node = torch.from_numpy(nids[2]).type(torch.cuda.LongTensor)
-    test_target = torch.from_numpy(labels[nids[2]]).type(torch.cuda.FloatTensor)
+    train_target = torch.from_numpy(labels[nids[0]]).type(torch.FloatTensor).to(device)
+    valid_target = torch.from_numpy(labels[nids[1]]).type(torch.FloatTensor).to(device)
+    #test_target = torch.from_numpy(labels[nids[2]]).type(torch.FloatTensor).to(device)
+
+    #train_node = torch.from_numpy(nids[0]).type(torch.LongTensor).to(device)
+    #valid_node = torch.from_numpy(nids[1]).type(torch.LongTensor).to(device)
+    #test_node = torch.from_numpy(nids[2]).type(torch.LongTensor).to(device)
 
     num_edge_type = len(A)
-    node_features = torch.from_numpy(node_features).type(torch.cuda.FloatTensor)
-    '''
-    if args.dataset == 'PPI':
-        train_node = torch.from_numpy(nids[0]).type(torch.cuda.LongTensor)
-        train_target = torch.from_numpy(labels[nids[0]]).type(torch.cuda.FloatTensor)
-        valid_node = torch.from_numpy(nids[1]).type(torch.cuda.LongTensor)
-        valid_target = torch.from_numpy(labels[nids[1]]).type(torch.cuda.FloatTensor)
-        test_node = torch.from_numpy(nids[2]).type(torch.cuda.LongTensor)
-        test_target = torch.from_numpy(labels[nids[2]]).type(torch.cuda.FloatTensor)
-        num_classes = 121
-        is_ppi = True
-    else:
-        train_node = torch.from_numpy(np.array(labels[0])[:,0]).type(torch.cuda.LongTensor)
-        train_target = torch.from_numpy(np.array(labels[0])[:,1]).type(torch.cuda.LongTensor)
-        valid_node = torch.from_numpy(np.array(labels[1])[:,0]).type(torch.cuda.LongTensor)
-        valid_target = torch.from_numpy(np.array(labels[1])[:,1]).type(torch.cuda.LongTensor)
-        test_node = torch.from_numpy(np.array(labels[2])[:,0]).type(torch.cuda.LongTensor)
-        test_target = torch.from_numpy(np.array(labels[2])[:,1]).type(torch.cuda.LongTensor)
-        num_classes = np.max([torch.max(train_target).item(), torch.max(valid_target).item(), torch.max(test_target).item()])+1
-        is_ppi = False
-    '''
-    is_ppi = False
-    final_f1, final_micro_f1 = [], []
-    tmp = None
+    node_features = torch.from_numpy(node_features).type(torch.FloatTensor).to(device)
+    train_node_features = node_features[nids[0]]
+    valid_node_features = node_features[nids[1]]
+    #test_node_features = node_features[nids[2]]
+
     runs = args.runs
     if args.pre_train:
         runs += 1
@@ -128,7 +130,6 @@ if __name__ == '__main__':
                                 num_channels=num_channels,
                                 w_in = node_features.shape[1],
                                 w_out = node_dim,
-                                num_class=num_classes,
                                 num_layers=num_layers,
                                 num_nodes=num_nodes,
                                 args=args)        
@@ -141,7 +142,6 @@ if __name__ == '__main__':
                 del A[-1]
             model = FastGTNs(num_edge_type=len(A),
                             w_in = node_features.shape[1],
-                            num_class=num_classes,
                             num_nodes = node_features.shape[0],
                             args = args)
             if args.pre_train and l > 0:
@@ -149,88 +149,71 @@ if __name__ == '__main__':
                     model.fastGTNs[layer].layers = pre_trained_fastGTNs[layer]
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        gamma = args.lr_decay
+        step_size = args.lr_decay_step
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-        model.cuda()
-        if args.dataset == 'PPI':
-            loss = nn.BCELoss()
-        else:
-            loss = nn.CrossEntropyLoss()
+        model.to(device)
+        #model = nn.DataParallel(model)
+        loss = nn.L1Loss()
         Ws = []
-        
-        best_val_loss = 10000
-        best_test_loss = 10000
-        best_train_loss = 10000
-        best_train_f1, best_micro_train_f1 = 0, 0
-        best_val_f1, best_micro_val_f1 = 0, 0
-        best_test_f1, best_micro_test_f1 = 0, 0
-        
-        for i in range(epochs):
+        for epoch in range(epochs):
             # print('Epoch ',i)
-            model.zero_grad()
+            avg_train_loss = 0
+            avg_valid_loss = 0
+            avg_test_loss = 0
+            avg_train_mse_error = 0
+            avg_valid_mse_error = 0
+            avg_test_mse_error = 0
             model.train()
-            if args.model == 'FastGTN':
-                loss,y_train,W = model(A, node_features, train_node, train_target, epoch=i)
-            else:
-                loss,y_train,W = model(A, node_features, train_node, train_target)
-            if args.dataset == 'PPI':
-                y_train = (y_train > 0).detach().float().cpu()
-                train_f1 = 0.0
-                sk_train_f1 = sk_f1_score(train_target.detach().cpu().numpy(), y_train.numpy(), average='micro')
-            else:
-                train_f1 = torch.mean(f1_score(torch.argmax(y_train.detach(),dim=1), train_target, num_classes=num_classes)).cpu().numpy()
-                sk_train_f1 = sk_f1_score(train_target.detach().cpu(), np.argmax(y_train.detach().cpu(), axis=1), average='micro')
-            # print(W)
-            # print('Train - Loss: {}, Macro_F1: {}, Micro_F1: {}'.format(loss.detach().cpu().numpy(), train_f1, sk_train_f1))
-            
-            loss.backward()
-            optimizer.step()
+            for batch in range(0, len(train_node_features), args.batch_size):
+                batch_size = min(args.batch_size, len(train_node_features)-batch)
+                num_batches = len(train_node_features)//batch_size
+                optimizer.zero_grad()
+                # take a batch of adjecency matrix
+                a = []
+                for i in range(len(A)):
+                    a.append((A[i][0][:, batch:batch+batch_size], A[i][1][batch:batch+batch_size]))
+                num_nodes = a[0][0].shape[1]
+                #print(len(a), a[0][0].shape, a[0][1].shape)
+                if args.model == 'FastGTN':
+                    loss,train_mse,y_train,W = model(a, train_node_features[batch:batch+batch_size], train_target[batch:batch+batch_size], epoch=i)
+                else:
+                    loss,train_mse,y_train,W = model(a, train_node_features[batch:batch+batch_size], train_target[batch:batch+batch_size])
+                loss.backward()
+                optimizer.step()
+                avg_train_loss += loss.detach().cpu().numpy() / num_batches
+                avg_train_mse_error += train_mse / num_batches
+            print('Epoch: {}\n Train - Loss: {}\n Train - MSE: {}\n'.format(epoch, avg_train_loss, avg_train_mse_error))
+            scheduler.step()
+            # validation
             model.eval()
-            # Valid
-            with torch.no_grad():
-                if args.model == 'FastGTN':
-                    val_loss, y_valid,_ = model.forward(A, node_features, valid_node, valid_target, epoch=i)
-                else:
-                    val_loss, y_valid,_ = model.forward(A, node_features, valid_node, valid_target)
-                if args.dataset == 'PPI':
-                    val_f1 = 0.0
-                    y_valid = (y_valid > 0).detach().float().cpu()
-                    sk_val_f1 = sk_f1_score(valid_target.detach().cpu().numpy(), y_valid.numpy(), average='micro')
-                else:
-                    val_f1 = torch.mean(f1_score(torch.argmax(y_valid,dim=1), valid_target, num_classes=num_classes)).cpu().numpy()
-                    sk_val_f1 = sk_f1_score(valid_target.detach().cpu(), np.argmax(y_valid.detach().cpu(), axis=1), average='micro')
-                # print('Valid - Loss: {}, Macro_F1: {}, Micro_F1: {}'.format(val_loss.detach().cpu().numpy(), val_f1, sk_val_f1))
-
-                if args.model == 'FastGTN':
-                    test_loss, y_test,W = model.forward(A, node_features, test_node, test_target, epoch=i)
-                else:
-                    test_loss, y_test,W = model.forward(A, node_features, test_node, test_target)
-                if args.dataset == 'PPI':
-                    test_f1 = 0.0
-                    y_test = (y_test > 0).detach().float().cpu()
-                    sk_test_f1 = sk_f1_score(test_target.detach().cpu().numpy(), y_test.numpy(), average='micro')
-                else:
-                    test_f1 = torch.mean(f1_score(torch.argmax(y_test,dim=1), test_target, num_classes=num_classes)).cpu().numpy()
-                    sk_test_f1 = sk_f1_score(test_target.detach().cpu(), np.argmax(y_test.detach().cpu(), axis=1), average='micro')
-                # print('Test - Loss: {}, Macro_F1: {}, Micro_F1:{} \n'.format(test_loss.detach().cpu().numpy(), test_f1, sk_test_f1))
-            if sk_val_f1 > best_micro_val_f1:
-                best_val_loss = val_loss.detach().cpu().numpy()
-                best_test_loss = test_loss.detach().cpu().numpy()
-                best_train_loss = loss.detach().cpu().numpy()
-                best_train_f1 = train_f1
-                best_val_f1 = val_f1
-                best_test_f1 = test_f1
-                best_micro_train_f1 = sk_train_f1
-                best_micro_val_f1 = sk_val_f1
-                best_micro_test_f1 = sk_test_f1
-        if l == 0 and args.pre_train:
-            continue
-        print('Run {}'.format(l))
-        print('--------------------Best Result-------------------------')
-        print('Train - Loss: {:.4f}, Macro_F1: {:.4f}, Micro_F1: {:.4f}'.format(best_test_loss, best_train_f1, best_micro_train_f1))
-        print('Valid - Loss: {:.4f}, Macro_F1: {:.4f}, Micro_F1: {:.4f}'.format(best_val_loss, best_val_f1, best_micro_val_f1))
-        print('Test - Loss: {:.4f}, Macro_F1: {:.4f}, Micro_F1: {:.4f}'.format(best_test_loss, best_test_f1, best_micro_test_f1))
-        final_f1.append(best_test_f1)
-        final_micro_f1.append(best_micro_test_f1)
-
-    print('--------------------Final Result-------------------------')
-    print('Test - Macro_F1: {:.4f}+{:.4f}, Micro_F1:{:.4f}+{:.4f}'.format(np.mean(final_f1), np.std(final_f1), np.mean(final_micro_f1), np.std(final_micro_f1)))
+            for batch in range(0, len(valid_node_features), args.batch_size):
+                batch_size = min(args.batch_size, len(valid_node_features)-batch)
+                num_batches = len(valid_node_features)//batch_size
+                # take a batch of adjecency matrix
+                a = []
+                for i in range(len(A)):
+                    a.append((A[i][0][:, batch:batch+batch_size], A[i][1][batch:batch+batch_size]))
+                with torch.no_grad():
+                    if args.model == 'FastGTN':
+                        val_loss, val_mse, y_valid,_ = model.forward(a, valid_node_features[batch:batch+batch_size], valid_target[batch:batch+batch_size], epoch=i)
+                    else:
+                        val_loss, val_mse, y_valid,_ = model.forward(a, valid_node_features[batch:batch+batch_size], valid_target[batch:batch+batch_size])
+                avg_valid_loss += val_loss.detach().cpu().numpy() / num_batches
+                avg_valid_mse_error += val_mse / num_batches
+            print('Epoch: {}\n Valid - Loss: {}\n Valid - MSE: {}\n'.format(epoch, avg_valid_loss, avg_valid_mse_error))
+            
+            '''
+            if i % 10 == 0:
+                for batch in range(0, len(test_node_features), args.batch_size):
+                    batch_size = min(args.batch_size, len(test_node_features)-batch)
+                    num_batches = len(test_node_features)//batch_size
+                    with torch.no_grad():
+                        if args.model == 'FastGTN':
+                            test_loss, y_test,W = model.forward(A, test_node_features[batch:batch+batch_size], test_target[batch:batch+batch_size], epoch=i)
+                        else:
+                            test_loss, y_test,W = model.forward(A, test_node_features[batch:batch+batch_size], test_target[batch:batch+batch_size])
+                    avg_test_loss += test_loss.detach().cpu().numpy() / num_batches
+                print('Epoch: {}\n Test - Loss: {}\n Test - MSE: {}\n'.format(epoch, avg_test_loss, avg_test_mse_error))
+            '''

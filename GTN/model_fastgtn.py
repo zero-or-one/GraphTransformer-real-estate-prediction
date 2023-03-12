@@ -6,7 +6,7 @@ import math
 from gcn import GCNConv
 import torch_sparse
 from torch_geometric.utils import softmax
-from utils import _norm, generate_non_local_graph
+from utils import _norm, generate_non_local_graph, MSE
 
 
 device = f'cuda' if torch.cuda.is_available() else 'cpu'
@@ -32,7 +32,7 @@ class FastGTNs(nn.Module):
         else:    
             self.loss = nn.CrossEntropyLoss()
         
-    def forward(self, A, X, target_x, target, num_nodes=None, eval=False, args=None, n_id=None, node_labels=None, epoch=None):
+    def forward(self, A, X, target, num_nodes=None, eval=False, args=None, n_id=None, node_labels=None, epoch=None):
         if num_nodes == None:
             num_nodes = self.num_nodes
         H_, Ws = self.fastGTNs[0](A, X, num_nodes=num_nodes, epoch=epoch)
@@ -46,7 +46,8 @@ class FastGTNs(nn.Module):
                 loss = self.loss(self.m(y), target)
             else:
                 loss = self.loss(y, target.squeeze())
-        return loss, y, Ws
+        mse_error = MSE(y, target)
+        return loss, mse_error, y, Ws
 
 class FastGTN(nn.Module):
     def __init__(self, num_edge_type, w_in, num_class, num_nodes, args=None, pre_trained=None):
@@ -128,9 +129,6 @@ class FastGTN(nn.Module):
             H_ = F.relu(self.linear1(H_))
         elif self.args.channel_agg == 'mean':
             H_ = H_ /self.args.num_channels
-        
-        
-        
         return H_, Ws
 
 class FastGTLayer(nn.Module):
