@@ -12,8 +12,9 @@ from utils import _norm, generate_non_local_graph, MSE
 device = f'cuda' if torch.cuda.is_available() else 'cpu'
 
 class FastGTNs(nn.Module):
-    def __init__(self, num_edge_type, w_in, num_class, num_nodes, args=None):
+    def __init__(self, num_edge_type, w_in, num_nodes, args=None):
         super(FastGTNs, self).__init__()
+        num_class = 1
         self.args = args
         self.num_nodes = num_nodes
         self.num_FastGTN_layers = args.num_FastGTN_layers
@@ -25,12 +26,7 @@ class FastGTNs(nn.Module):
                 fastGTNs.append(FastGTN(num_edge_type, args.node_dim, num_class, num_nodes, args))
         self.fastGTNs = nn.ModuleList(fastGTNs)
         self.linear = nn.Linear(args.node_dim, num_class)
-        self.loss = nn.CrossEntropyLoss()
-        if args.dataset == "PPI":
-            self.m = nn.Sigmoid()
-            self.loss = nn.BCELoss()
-        else:    
-            self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.L1Loss()
         
     def forward(self, A, X, target, num_nodes=None, eval=False, args=None, n_id=None, node_labels=None, epoch=None):
         if num_nodes == None:
@@ -38,7 +34,7 @@ class FastGTNs(nn.Module):
         H_, Ws = self.fastGTNs[0](A, X, num_nodes=num_nodes, epoch=epoch)
         for i in range(1, self.num_FastGTN_layers):
             H_, Ws = self.fastGTNs[i](A, H_, num_nodes=num_nodes)
-        y = self.linear(H_[target_x])
+        y = self.linear(H_)
         if eval:
             return y
         else:

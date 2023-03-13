@@ -1,15 +1,13 @@
 import os
 from time import time
-import dgl
 import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy import sparse
-import matplotlib.pyplot as plt
 import argparse
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.externals import joblib 
+#from sklearn.externals import joblib 
 import time
 
 def construct_graph_from_df(df, G=None, hid='house'):
@@ -61,12 +59,12 @@ def apply_PC(A):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path" , type=str, default='./data/dataset_realestate.csv')
+    parser.add_argument("--data_path" , type=str, default='./dataset/dataset_realestate.csv')
     parser.add_argument("--create_adj", type=int, default=1)
     parser.add_argument("--fill_gaps", type=int, default=1)
     args = parser.parse_args()
 
-    df = pd.read_csv(args.data_path, index_col=False)
+    df = pd.read_csv(args.data_path, encoding = 'unicode_escape', index_col=False)
     df = df.dropna()
     df['year'] = pd.DatetimeIndex(df['yyyymmdd']).year
     df['month'] = pd.DatetimeIndex(df['yyyymmdd']).month
@@ -203,11 +201,11 @@ if __name__ == '__main__':
         #Ah = apply_PC(Ah)
         #Ag = apply_PC(Ag)
 
-        np.save('./data/adjacency_house.npy', Ah)
-        np.save('./data/adjacency_geo.npy', Ag)
+        np.save('./dataset/adjacency_house.npy', Ah)
+        np.save('./dataset/adjacency_geo.npy', Ag)
         # It is better to save the adjacency matrix in sparse format, but it is not working
-        #sparse.save_npz('./data/adjacency_house.npz', sparse.csr_matrix(Ah))
-        #sparse.save_npz('./data/adjacency_geo.npz', sparse.csr_matrix(Ag))
+        #sparse.save_npz('./dataset/adjacency_house.npz', sparse.csr_matrix(Ah))
+        #sparse.save_npz('./dataset/adjacency_geo.npz', sparse.csr_matrix(Ag))
 
     # prepare data for training using one-hot encoding
     print(df.shape)
@@ -225,7 +223,7 @@ if __name__ == '__main__':
     scaler = MinMaxScaler(feature_range=(-1, 1))
     df.iloc[:, :-2] = scaler.fit_transform(df.iloc[:, :-2])
     # save the scaler
-    joblib.dump(scaler, './data/scaler.pkl')
+    #joblib.dump(scaler, './dataset/scaler.pkl')
 
     # prepare data for training using one-hot encoding
     df_lstm = pd.get_dummies(df_lstm)
@@ -242,8 +240,8 @@ if __name__ == '__main__':
     scaler = MinMaxScaler(feature_range=(-1, 1))
     df_lstm.iloc[:, :-2] = scaler.fit_transform(df_lstm.iloc[:, :-2])
     # save the scaler
-    joblib.dump(scaler, './data/scaler_lstm.pkl')
+    #joblib.dump(scaler, './dataset/scaler_lstm.pkl')
 
     # save the data
-    df.to_csv('./data/processed_data.csv', index=False)
-    df_lstm.to_csv('./data/processed_data_lstm.csv', index=False)
+    df.to_csv('./dataset/processed_data.csv', index=False)
+    df_lstm.to_csv('./dataset/processed_data_lstm.csv', index=False)
